@@ -13,6 +13,11 @@ const TemplateEditor = dynamic(() => import('@/components/templates/template-edi
   loading: () => <div>Loading editor...</div>
 });
 
+const RecipientList = dynamic(() => import('@/components/recipients/recipient-list'), {
+  ssr: false,
+  loading: () => <div>Loading recipients...</div>
+});
+
 export default function Page() {
   const [activeTab, setActiveTab] = React.useState("template");
   const [mounted, setMounted] = React.useState(false);
@@ -84,7 +89,7 @@ export default function Page() {
           </TabsContent>
 
           <TabsContent value="recipients" className="mt-6 space-y-4">
-            <div>Recipient management coming soon...</div>
+            <RecipientList />
           </TabsContent>
 
           <TabsContent value="settings" className="mt-6 space-y-4">
