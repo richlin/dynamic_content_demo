@@ -15,7 +15,7 @@ export default function Page() {
             height={40}
             priority
           />
-          <h1 className="text-xl font-semibold">Dynamic Content Demo</h1>
+          <h1 className="text-xl font-semibold">Marketing Email Configuration - Demo</h1>
         </div>
       </header>
 
