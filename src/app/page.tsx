@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { NavBar } from "@/components/ui/tubelight-navbar";
-import { FileText, Mail, Users, Settings } from 'lucide-react';
+import { FileText, Mail, Users, PlayCircle } from 'lucide-react';
 
 // Import TemplateEditor dynamically to avoid hydration issues
 const TemplateEditor = dynamic(() => import('@/components/templates/template-editor'), {
@@ -23,6 +23,11 @@ const SegmentList = dynamic(() => import('@/components/segments/segment-list'), 
   loading: () => <div>Loading segments...</div>
 });
 
+const CampaignList = dynamic(() => import('@/components/campaigns/campaign-list'), {
+  ssr: false,
+  loading: () => <div>Loading campaigns...</div>
+});
+
 export default function Page() {
   const [activeTab, setActiveTab] = React.useState("template");
   const [mounted, setMounted] = React.useState(false);
@@ -36,7 +41,7 @@ export default function Page() {
     { name: 'Template', url: '#template', icon: FileText },
     { name: 'Segments', url: '#segments', icon: Users },
     { name: 'Recipients', url: '#recipients', icon: Mail },
-    { name: 'Settings', url: '#settings', icon: Settings }
+    { name: 'Campaigns', url: '#campaigns', icon: PlayCircle }
   ];
 
   const handleNavClick = (item: string) => {
@@ -97,8 +102,8 @@ export default function Page() {
             <RecipientList />
           </TabsContent>
 
-          <TabsContent value="settings" className="mt-6 space-y-4">
-            <div>Settings configuration coming soon...</div>
+          <TabsContent value="campaigns" className="mt-6 space-y-4">
+            <CampaignList />
           </TabsContent>
         </Tabs>
       </main>
