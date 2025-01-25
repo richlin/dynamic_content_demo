@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Dynamic Content Demo - American Express",
+  title: "Marketing Email Configuration Demo - American Express",
   description: "Email template personalization demo for American Express",
 };
 

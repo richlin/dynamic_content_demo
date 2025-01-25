@@ -170,20 +170,31 @@ Terms and conditions apply.`,
 const VARIANT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export default function TemplateEditor() {
-    const [segments] = React.useState<Segment[]>(() => {
-        if (typeof window === 'undefined') return INITIAL_SEGMENTS;
-        try {
-            const savedSegments = localStorage.getItem('savedSegments');
-            return savedSegments ? JSON.parse(savedSegments) : INITIAL_SEGMENTS;
-        } catch (error) {
-            console.error('Error loading segments from localStorage:', error);
-            return INITIAL_SEGMENTS;
-        }
-    });
-    const [selectedSegment, setSelectedSegment] = React.useState<string>(segments[0].id);
-    const [variants, setVariants] = React.useState<Variant[]>(segments[0].variants);
-    const [selectedVariant, setSelectedVariant] = React.useState<Variant>(variants[0]);
+    const [segments, setSegments] = React.useState<Segment[]>(INITIAL_SEGMENTS);
+    const [selectedSegment, setSelectedSegment] = React.useState<string>(INITIAL_SEGMENTS[0].id);
+    const [variants, setVariants] = React.useState<Variant[]>(INITIAL_SEGMENTS[0].variants);
+    const [selectedVariant, setSelectedVariant] = React.useState<Variant>(INITIAL_SEGMENTS[0].variants[0]);
     const [lastSaved, setLastSaved] = React.useState<Date | null>(null);
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setMounted(true);
+        // Try to load saved segments from localStorage
+        if (typeof window !== 'undefined') {
+            try {
+                const savedSegments = localStorage.getItem('savedSegments');
+                if (savedSegments) {
+                    const parsed = JSON.parse(savedSegments);
+                    setSegments(parsed);
+                    setSelectedSegment(parsed[0].id);
+                    setVariants(parsed[0].variants);
+                    setSelectedVariant(parsed[0].variants[0]);
+                }
+            } catch (error) {
+                console.error('Error loading segments from localStorage:', error);
+            }
+        }
+    }, []);
 
     React.useEffect(() => {
         const segment = segments.find(s => s.id === selectedSegment);
@@ -194,11 +205,12 @@ export default function TemplateEditor() {
     }, [selectedSegment, segments]);
 
     const saveToLocalStorage = (updatedSegments: Segment[]) => {
-        if (typeof window === 'undefined') return;
-        try {
-            localStorage.setItem('savedSegments', JSON.stringify(updatedSegments));
-        } catch (error) {
-            console.error('Error saving to localStorage:', error);
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.setItem('savedSegments', JSON.stringify(updatedSegments));
+            } catch (error) {
+                console.error('Error saving to localStorage:', error);
+            }
         }
     };
 
@@ -272,6 +284,10 @@ export default function TemplateEditor() {
         
         console.log('Template saved:', { selectedSegment, variants });
     };
+
+    if (!mounted) {
+        return null;
+    }
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
