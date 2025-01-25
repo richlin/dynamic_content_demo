@@ -41,33 +41,39 @@ export default function Page() {
   return (
     <div className="min-h-screen bg-background pb-20 sm:pb-0">
       <header className="fixed top-0 left-0 right-0 z-40 bg-background/80 backdrop-blur-lg border-b">
-        <div className="container flex h-16 items-center justify-between px-4">
-          <div className="flex items-center space-x-4">
-            <Image
-              src="https://www.aexp-static.com/cdaas/one/statics/axp-static-assets/1.8.0/package/dist/img/logos/dls-logo-bluebox-solid.svg"
-              alt="American Express Logo"
-              width={32}
-              height={32}
-              priority
-              className="h-8 w-auto"
-            />
-            <div className="h-6 w-px bg-border" />
-            <h1 className="text-lg font-medium">Marketing Email Configuration</h1>
+        <div className="container px-4">
+          {/* Top bar with logo */}
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Image
+                src="https://www.aexp-static.com/cdaas/one/statics/axp-static-assets/1.8.0/package/dist/img/logos/dls-logo-bluebox-solid.svg"
+                alt="American Express Logo"
+                width={32}
+                height={32}
+                priority
+                className="h-8 w-auto"
+              />
+              <div className="h-6 w-px bg-border" />
+              <h1 className="text-lg font-medium">Marketing Email Configuration</h1>
+            </div>
+            <div className="text-sm text-muted-foreground">Demo</div>
           </div>
-          <div className="text-sm text-muted-foreground">Demo</div>
+          
+          {/* Navigation bar */}
+          <div className="flex justify-center -mb-px">
+            <NavBar 
+              items={navItems.map(item => ({
+                ...item,
+                url: `#${item.name.toLowerCase()}`,
+                onClick: () => handleNavClick(item.name)
+              }))} 
+              className="relative bottom-0 sm:top-0 transform-none !fixed-none !mb-0 !pt-0"
+            />
+          </div>
         </div>
       </header>
 
-      <main className="container mx-auto py-8 px-4 mt-16">
-        <NavBar 
-          items={navItems.map(item => ({
-            ...item,
-            url: `#${item.name.toLowerCase()}`,
-            onClick: () => handleNavClick(item.name)
-          }))} 
-          className="mb-8" 
-        />
-        
+      <main className="container mx-auto py-8 px-4 mt-28">
         <Tabs value={activeTab} className="space-y-4">
           <TabsContent value="template" className="mt-6 space-y-4">
             <TemplateEditor />
