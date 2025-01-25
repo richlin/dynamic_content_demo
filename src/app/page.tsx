@@ -18,6 +18,11 @@ const RecipientList = dynamic(() => import('@/components/recipients/recipient-li
   loading: () => <div>Loading recipients...</div>
 });
 
+const SegmentList = dynamic(() => import('@/components/segments/segment-list'), {
+  ssr: false,
+  loading: () => <div>Loading segments...</div>
+});
+
 export default function Page() {
   const [activeTab, setActiveTab] = React.useState("template");
   const [mounted, setMounted] = React.useState(false);
@@ -85,7 +90,7 @@ export default function Page() {
           </TabsContent>
 
           <TabsContent value="segments" className="mt-6 space-y-4">
-            <div>Segment configuration coming soon...</div>
+            <SegmentList />
           </TabsContent>
 
           <TabsContent value="recipients" className="mt-6 space-y-4">
