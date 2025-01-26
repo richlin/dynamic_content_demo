@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { X } from "lucide-react";
+import { supabase } from '@/lib/supabase';
 
 interface Variant {
     id: string;
@@ -272,18 +273,133 @@ export default function TemplateEditor() {
         saveToLocalStorage(updatedSegments);
     };
 
-    const handleSave = () => {
-        // Save to localStorage
-        const updatedSegments = segments.map(segment =>
-            segment.id === selectedSegment
-                ? { ...segment, variants }
-                : segment
-        );
-        saveToLocalStorage(updatedSegments);
-        setLastSaved(new Date());
-        
-        console.log('Template saved:', { selectedSegment, variants });
+    const handleSave = async () => {
+        try {
+            // For each variant in the current segment, save a template
+            for (const variant of variants) {
+                const templateData = {
+                    template_id: variant.id,
+                    subject_line: variant.subjectLine,
+                    html_body: variant.emailBody,
+                    segment: selectedSegment,
+                    variation_key: variant.id.split('-').pop() || 'a'  // Extract 'a' or 'b' from the variant ID
+                };
+
+                // Check if template exists
+                const { data: existingTemplate } = await supabase
+                    .from('email_templates')
+                    .select()
+                    .eq('template_id', variant.id)
+                    .single();
+
+                if (existingTemplate) {
+                    // Update existing template
+                    const { error: updateError } = await supabase
+                        .from('email_templates')
+                        .update(templateData)
+                        .eq('template_id', variant.id);
+
+                    if (updateError) throw updateError;
+                } else {
+                    // Insert new template
+                    const { error: insertError } = await supabase
+                        .from('email_templates')
+                        .insert([templateData]);
+
+                    if (insertError) throw insertError;
+                }
+
+                // Save variant rules
+                const variantRuleData = {
+                    segment: selectedSegment,
+                    variation_key: variant.id.split('-').pop() || 'a',
+                    headline: variant.subjectLine,
+                    image_url: variant.imageUrl,
+                    call_to_action: variant.callToAction
+                };
+
+                // Check if variant rule exists
+                const { data: existingRule } = await supabase
+                    .from('segment_variant_rules')
+                    .select()
+                    .eq('segment', selectedSegment)
+                    .eq('variation_key', variant.id.split('-').pop() || 'a')
+                    .single();
+
+                if (existingRule) {
+                    // Update existing rule
+                    const { error: updateError } = await supabase
+                        .from('segment_variant_rules')
+                        .update(variantRuleData)
+                        .eq('segment', selectedSegment)
+                        .eq('variation_key', variant.id.split('-').pop() || 'a');
+
+                    if (updateError) throw updateError;
+                } else {
+                    // Insert new rule
+                    const { error: insertError } = await supabase
+                        .from('segment_variant_rules')
+                        .insert([variantRuleData]);
+
+                    if (insertError) throw insertError;
+                }
+            }
+
+            setLastSaved(new Date());
+            alert('Templates and variant rules saved successfully!');
+        } catch (error) {
+            console.error('Error saving template:', error);
+            alert('Failed to save template. Please check the console for details.');
+        }
     };
+
+    // Update the useEffect to load data from Supabase instead of localStorage
+    React.useEffect(() => {
+        async function loadData() {
+            try {
+                // Load templates
+                const { data: templatesData, error: templatesError } = await supabase
+                    .from('email_templates')
+                    .select('*')
+                    .eq('segment', selectedSegment);
+
+                if (templatesError) throw templatesError;
+
+                // Load variant rules
+                const { data: rulesData, error: rulesError } = await supabase
+                    .from('segment_variant_rules')
+                    .select('*')
+                    .eq('segment', selectedSegment);
+
+                if (rulesError) throw rulesError;
+
+                if (templatesData && rulesData) {
+                    // Combine template and rule data
+                    const combinedVariants = templatesData.map(template => {
+                        const rule = rulesData.find(r => r.variation_key === template.variation_key);
+                        return {
+                            id: template.template_id,
+                            subjectLine: template.subject_line,
+                            emailBody: template.html_body,
+                            callToAction: rule?.call_to_action || '',
+                            imageUrl: rule?.image_url || ''
+                        };
+                    });
+
+                    if (combinedVariants.length > 0) {
+                        setVariants(combinedVariants);
+                        setSelectedVariant(combinedVariants[0]);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+            }
+        }
+
+        if (selectedSegment) {
+            loadData();
+        }
+    }, [selectedSegment]);
 
     if (!mounted) {
         return null;
