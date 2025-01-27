@@ -1,6 +1,6 @@
 'use client';
 
-import { supabase } from '@/lib/supabase';
+import { supabase, type Campaign as DatabaseCampaign } from '@/lib/supabase';
 import { Plus, Play, Pause, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,17 +9,6 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import React from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { Recipient, SegmentVariantRule } from '@/lib/supabase';
-
-interface Campaign {
-    id: string;
-    name: string;
-    segments: string[];
-    start_date: string;
-    end_date: string;
-    assignment_method: 'random' | 'sequential';
-    status: 'draft' | 'active' | 'paused' | 'completed';
-}
 
 const ASSIGNMENT_METHODS = [
     { id: 'random', name: 'Random Assignment' },
@@ -27,31 +16,14 @@ const ASSIGNMENT_METHODS = [
     { id: 'weighted', name: 'Weighted (70/30)' }
 ];
 
-const INITIAL_SEGMENTS = [
-    { id: 'high-spender', name: 'High Spender' },
-    { id: 'business-traveler', name: 'Business Traveler' },
-    { id: 'budget-conscious', name: 'Budget Conscious' }
-];
-
-const INITIAL_VARIANTS = [
-    { id: 'variant-a', name: 'Variant A' },
-    { id: 'variant-b', name: 'Variant B' }
-];
-
-interface SelectedSegment {
-    id: string;
-    segmentId: string;
-    variants: string[];
-}
-
 export default function CampaignList() {
-    const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
+    const [campaigns, setCampaigns] = React.useState<DatabaseCampaign[]>([]);
     const [segments, setSegments] = React.useState<string[]>([]);
     const [isTestRunning, setIsTestRunning] = React.useState(false);
     const [showNewCampaignForm, setShowNewCampaignForm] = React.useState(false);
-    const [newCampaign, setNewCampaign] = React.useState<Omit<Campaign, 'id'>>({
+    const [newCampaign, setNewCampaign] = React.useState<Omit<DatabaseCampaign, 'id' | 'created_at'>>({
         name: '',
-        segments: [],
+        segments: '',
         start_date: '',
         end_date: '',
         assignment_method: 'random',
@@ -92,15 +64,16 @@ export default function CampaignList() {
     };
 
     const handleAddCampaign = async () => {
-        if (!newCampaign.name || !newCampaign.start_date || !newCampaign.end_date || newCampaign.segments.length === 0) {
-            alert('Please fill in all required fields and add at least one segment');
+        if (!newCampaign.name || !newCampaign.start_date || !newCampaign.end_date || !newCampaign.segments) {
+            alert('Please fill in all required fields and select at least one segment');
             return;
         }
 
         try {
             const campaignWithId = {
                 id: uuidv4(),
-                ...newCampaign
+                ...newCampaign,
+                created_at: new Date().toISOString()
             };
 
             const { error } = await supabase
@@ -113,7 +86,7 @@ export default function CampaignList() {
             setShowNewCampaignForm(false);
             setNewCampaign({
                 name: '',
-                segments: [],
+                segments: '',
                 start_date: '',
                 end_date: '',
                 assignment_method: 'random',
@@ -125,7 +98,7 @@ export default function CampaignList() {
         }
     };
 
-    const handleStatusChange = async (campaignId: string, newStatus: Campaign['status']) => {
+    const handleStatusChange = async (campaignId: string, newStatus: DatabaseCampaign['status']) => {
         try {
             const { error } = await supabase
                 .from('campaigns')
@@ -149,67 +122,69 @@ export default function CampaignList() {
             const campaign = campaigns.find(c => c.id === campaignId);
             if (!campaign) throw new Error('Campaign not found');
 
-            // Get recipients for each segment in the campaign
-            for (const segment of campaign.segments) {
-                const { data: recipients, error: recipientsError } = await supabase
-                    .from('recipients')
-                    .select('*')
-                    .eq('segment', segment);
+            // Get recipients for the campaign's segment
+            const { data: recipients, error: recipientsError } = await supabase
+                .from('recipients')
+                .select('*')
+                .eq('segment', campaign.segments);
 
-                if (recipientsError) throw recipientsError;
-                if (!recipients || recipients.length === 0) continue;
+            if (recipientsError) throw recipientsError;
+            if (!recipients || recipients.length === 0) {
+                throw new Error('No recipients found for this segment');
+            }
 
-                // Get variant rules for this segment
-                const { data: rules, error: rulesError } = await supabase
-                    .from('segment_variant_rules')
-                    .select('*')
-                    .eq('segment', segment);
+            // Get variant rules for this segment
+            const { data: rules, error: rulesError } = await supabase
+                .from('segment_variant_rules')
+                .select('*')
+                .eq('segment', campaign.segments);
 
-                if (rulesError) throw rulesError;
-                if (!rules || rules.length === 0) continue;
+            if (rulesError) throw rulesError;
+            if (!rules || rules.length === 0) {
+                throw new Error('No variant rules found for this segment');
+            }
 
-                // Send test emails to recipients
-                for (const recipient of recipients) {
-                    // Randomly select a variant
-                    const variant = rules[Math.floor(Math.random() * rules.length)];
-                    
-                    if (!variant) continue;
+            // Send test emails to recipients
+            for (const recipient of recipients) {
+                // Randomly select a variant
+                const variant = rules[Math.floor(Math.random() * rules.length)];
+                
+                if (!variant) continue;
 
-                    // Send the email
-                    const response = await fetch('/api/send-test-email', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            recipient,
-                            variant
-                        }),
-                    });
+                // Send the email
+                const response = await fetch('/api/send-test-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        recipient,
+                        variant
+                    }),
+                });
 
-                    if (!response.ok) {
-                        throw new Error(`Failed to send email to ${recipient.email}`);
-                    }
-
-                    // Record the email send
-                    const { error: sendError } = await supabase
-                        .from('email_sends')
-                        .insert([{
-                            id: uuidv4(),
-                            recipient_id: recipient.id,
-                            variant_rule_id: variant.id,
-                            variation_used: variant.variation_key,
-                            timestamp_sent: new Date().toISOString()
-                        }]);
-
-                    if (sendError) throw sendError;
+                if (!response.ok) {
+                    throw new Error(`Failed to send email to ${recipient.email}`);
                 }
+
+                // Record the email send
+                const { error: sendError } = await supabase
+                    .from('email_sends')
+                    .insert([{
+                        id: uuidv4(),
+                        recipient_id: recipient.id,
+                        variant_rule_id: variant.id,
+                        variation_used: variant.variation_key,
+                        timestamp_sent: new Date().toISOString()
+                    }]);
+
+                if (sendError) throw sendError;
             }
 
             alert('Test run completed successfully!');
         } catch (error) {
             console.error('Error running test:', error);
-            alert('Failed to complete test run. Please check the console for details.');
+            alert(`Failed to complete test run: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
             setIsTestRunning(false);
         }
@@ -257,7 +232,7 @@ export default function CampaignList() {
                                     <div>
                                         <span className="font-medium">{campaign.name}</span>
                                         <span className="ml-2 text-sm text-gray-500">
-                                            {campaign.segments.join(', ')}
+                                            {campaign.segments}
                                         </span>
                                         <span className={`ml-2 text-sm ${
                                             campaign.status === 'active' ? 'text-green-500' :
@@ -338,15 +313,15 @@ export default function CampaignList() {
                                     />
                                 </div>
                                 <div>
-                                    <Label>Segments</Label>
+                                    <Label>Segment</Label>
                                     <Select
-                                        value={newCampaign.segments.join(',')}
+                                        value={newCampaign.segments}
                                         onValueChange={(value) => setNewCampaign({
                                             ...newCampaign,
-                                            segments: value.split(',').filter(Boolean)
+                                            segments: value
                                         })}
                                     >
-                                        <option value="">Select segments...</option>
+                                        <option value="">Select a segment...</option>
                                         {segments.map((segment) => (
                                             <option key={segment} value={segment}>
                                                 {segment}
@@ -376,11 +351,12 @@ export default function CampaignList() {
                                         value={newCampaign.assignment_method}
                                         onValueChange={(value) => setNewCampaign({
                                             ...newCampaign,
-                                            assignment_method: value as 'random' | 'sequential'
+                                            assignment_method: value as DatabaseCampaign['assignment_method']
                                         })}
                                     >
-                                        <option value="random">Random</option>
-                                        <option value="sequential">Sequential</option>
+                                        <option value="random">Random Assignment</option>
+                                        <option value="sequential">Sequential (A/B)</option>
+                                        <option value="weighted">Weighted (70/30)</option>
                                     </Select>
                                 </div>
                             </div>

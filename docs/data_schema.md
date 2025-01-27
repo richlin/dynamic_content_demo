@@ -20,3 +20,12 @@ recipient_id (UUID, Foreign Key) - Links to the recipients table.
 template_id (UUID, Foreign Key) - Links to the email_templates table.
 variation_used (VARCHAR) - Variation used for the email (e.g., "A" or "B").
 timestamp_sent (TIMESTAMP) - Timestamp when the email was sent.
+
+4. camoaigns 
+id (UUID, Primary Key) - Unique identifier for each email send record.
+name (VARCHAR) - Name of the campaign.
+segments (VARCHAR) - Segment name (links to "HighSpender", etc.).
+start_date (TIMESTAMP) - Timestamp when the email was sent.
+end_date (TIMESTAMP) - Timestamp when the email was sent.
+assignment_method (VARCHAR) - Assignment method (links to "random", "sequential", "weighted").
+status (VARCHAR) - Status of the campaign (links to "draft", "active", "paused", "completed").
