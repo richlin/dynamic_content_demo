@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { X, Plus, Users } from "lucide-react";
+import { supabase } from '@/lib/supabase';
 
 interface Segment {
     id: string;
@@ -31,62 +32,87 @@ const generateId = (name: string) => {
 };
 
 export default function SegmentList() {
-    const [segments, setSegments] = React.useState<Segment[]>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('segments');
-            return saved ? JSON.parse(saved) : INITIAL_SEGMENTS;
-        }
-        return INITIAL_SEGMENTS;
-    });
-
+    const [segments, setSegments] = React.useState<Segment[]>([]);
     const [newSegmentName, setNewSegmentName] = React.useState('');
-    const [recipients, setRecipients] = React.useState<Recipient[]>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('recipients');
-            return saved ? JSON.parse(saved) : [];
-        }
-        return [];
-    });
+    const [recipientCounts, setRecipientCounts] = React.useState<Record<string, number>>({});
 
-    const saveToLocalStorage = (updatedSegments: Segment[]) => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('segments', JSON.stringify(updatedSegments));
+    // Load segments and recipient counts on mount
+    React.useEffect(() => {
+        loadSegmentsAndCounts();
+    }, []);
+
+    const loadSegmentsAndCounts = async () => {
+        try {
+            // Get unique segments from recipients table
+            const { data: segmentData, error: segmentError } = await supabase
+                .from('recipients')
+                .select('segment')
+                .not('segment', 'is', null);
+
+            if (segmentError) throw segmentError;
+
+            // Convert to unique segments
+            const uniqueSegments = Array.from(new Set(segmentData?.map(r => r.segment) || []));
+            const formattedSegments = uniqueSegments.map(name => ({
+                id: name,
+                name: name
+            }));
+
+            setSegments(formattedSegments);
+
+            // Get recipient counts for each segment
+            const counts: Record<string, number> = {};
+            for (const segment of uniqueSegments) {
+                const { count } = await supabase
+                    .from('recipients')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('segment', segment);
+                
+                counts[segment] = count || 0;
+            }
+            setRecipientCounts(counts);
+        } catch (error) {
+            console.error('Error loading segments:', error);
+            alert('Failed to load segments. Please try again.');
         }
     };
 
-    const getRecipientCount = (segmentId: string) => {
-        return recipients.filter(r => r.segments.includes(segmentId)).length;
-    };
-
-    const handleAddSegment = () => {
+    const handleAddSegment = async () => {
         if (!newSegmentName.trim()) {
             alert('Please enter a segment name');
             return;
         }
 
-        const id = generateId(newSegmentName);
-        if (segments.some(s => s.id === id)) {
-            alert('A segment with a similar name already exists');
+        const segmentId = newSegmentName.trim();
+        if (segments.some(s => s.id === segmentId)) {
+            alert('A segment with this name already exists');
             return;
         }
 
-        const updatedSegments = [...segments, { id, name: newSegmentName.trim() }];
-        setSegments(updatedSegments);
-        saveToLocalStorage(updatedSegments);
-        setNewSegmentName('');
+        try {
+            // We don't actually insert into a segments table
+            // Instead, the segment becomes valid when it's used in a recipient
+            setSegments([...segments, { id: segmentId, name: segmentId }]);
+            setNewSegmentName('');
+        } catch (error) {
+            console.error('Error adding segment:', error);
+            alert('Failed to add segment. Please try again.');
+        }
     };
 
-    const handleRemoveSegment = (segmentId: string) => {
+    const handleRemoveSegment = async (segmentId: string) => {
         // Check if segment is in use
-        const recipientsInSegment = recipients.filter(r => r.segments.includes(segmentId));
-        if (recipientsInSegment.length > 0) {
-            alert(`Cannot remove segment. It is currently assigned to ${recipientsInSegment.length} recipient(s).`);
+        const { count } = await supabase
+            .from('recipients')
+            .select('*', { count: 'exact', head: true })
+            .eq('segment', segmentId);
+
+        if (count && count > 0) {
+            alert(`Cannot remove segment. It is currently assigned to ${count} recipient(s).`);
             return;
         }
 
-        const updatedSegments = segments.filter(s => s.id !== segmentId);
-        setSegments(updatedSegments);
-        saveToLocalStorage(updatedSegments);
+        setSegments(segments.filter(s => s.id !== segmentId));
     };
 
     return (
@@ -122,36 +148,34 @@ export default function SegmentList() {
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
                             <h2 className="text-xl font-semibold">Segments</h2>
-                            <span className="text-sm text-muted-foreground">
-                                {segments.length} total
-                            </span>
+                            <span className="text-sm text-gray-500">Total: {segments.length}</span>
                         </div>
-                        <div className="divide-y">
-                            {segments.map((segment) => {
-                                const recipientCount = getRecipientCount(segment.id);
-                                return (
-                                    <div key={segment.id} className="py-4 flex items-center justify-between">
-                                        <div className="space-y-1">
-                                            <div className="font-medium">
-                                                {segment.name}
-                                            </div>
-                                            <div className="flex items-center text-sm text-muted-foreground">
-                                                <Users className="w-4 h-4 mr-1" />
-                                                {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
-                                            </div>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveSegment(segment.id)}
-                                            className="text-red-600 hover:text-red-700"
-                                            disabled={recipientCount > 0}
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </Button>
+                        <div className="space-y-2">
+                            {segments.map((segment) => (
+                                <div
+                                    key={segment.id}
+                                    className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
+                                >
+                                    <div>
+                                        <span className="font-medium">{segment.name}</span>
+                                        <span className="ml-2 text-sm text-gray-500">
+                                            ({recipientCounts[segment.id] || 0} recipients)
+                                        </span>
                                     </div>
-                                );
-                            })}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleRemoveSegment(segment.id)}
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                            ))}
+                            {segments.length === 0 && (
+                                <div className="text-center text-gray-500 py-4">
+                                    No segments added yet
+                                </div>
+                            )}
                         </div>
                     </div>
                 </CardContent>
