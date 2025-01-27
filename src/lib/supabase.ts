@@ -34,4 +34,15 @@ export interface EmailSend {
     variant_rule_id: string;
     variation_used: string;
     timestamp_sent: string;
+}
+
+export interface Campaign {
+    id: string;
+    name: string;
+    segments: string;  // Note: This is a single string in the DB
+    start_date: string;
+    end_date: string;
+    assignment_method: 'random' | 'sequential' | 'weighted';
+    status: 'draft' | 'active' | 'paused' | 'completed';
+    created_at?: string;
 } 
