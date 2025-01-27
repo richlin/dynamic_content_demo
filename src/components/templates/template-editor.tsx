@@ -170,6 +170,15 @@ Terms and conditions apply.`,
 
 const VARIANT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
+const getVariantDisplayName = (variant: Variant) => {
+    // If it's a UUID, extract the variation_key from the database format
+    if (variant.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
+        return `Variant ${variant.id.split('-').pop()?.toUpperCase()}`;
+    }
+    // For new variants, use the simple format
+    return `Variant ${variant.id.split('-').pop()?.toUpperCase()}`;
+};
+
 export default function TemplateEditor() {
     const [segments, setSegments] = React.useState<Segment[]>(INITIAL_SEGMENTS);
     const [selectedSegment, setSelectedSegment] = React.useState<string>(INITIAL_SEGMENTS[0].id);
@@ -236,23 +245,42 @@ export default function TemplateEditor() {
         saveToLocalStorage(updatedSegments);
     };
 
-    const removeVariant = (variantId: string) => {
+    const removeVariant = async (variantId: string) => {
         if (variants.length <= 1) {
             return; // Prevent removing the last variant
         }
-        const newVariants = variants.filter(v => v.id !== variantId);
-        setVariants(newVariants);
-        if (selectedVariant.id === variantId) {
-            setSelectedVariant(newVariants[0]);
+
+        try {
+            // If it's a UUID (existing variant), delete from database
+            if (variantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
+                const { error: deleteError } = await supabase
+                    .from('segment_variant_rules')
+                    .delete()
+                    .eq('id', variantId);
+
+                if (deleteError) {
+                    throw new Error(`Error deleting variant: ${deleteError.message}`);
+                }
+            }
+
+            // Update local state
+            const newVariants = variants.filter(v => v.id !== variantId);
+            setVariants(newVariants);
+            if (selectedVariant.id === variantId) {
+                setSelectedVariant(newVariants[0]);
+            }
+            
+            // Update the segment's variants
+            const updatedSegments = segments.map(segment =>
+                segment.id === selectedSegment
+                    ? { ...segment, variants: newVariants }
+                    : segment
+            );
+            setSegments(updatedSegments);
+        } catch (error) {
+            console.error('Error removing variant:', error);
+            alert(`Failed to remove variant: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-        
-        // Update the segment's variants
-        const updatedSegments = segments.map(segment =>
-            segment.id === selectedSegment
-                ? { ...segment, variants: newVariants }
-                : segment
-        );
-        saveToLocalStorage(updatedSegments);
     };
 
     const updateVariant = (variantId: string, field: keyof Variant, value: string) => {
@@ -421,7 +449,7 @@ export default function TemplateEditor() {
                                     <SelectContent>
                                         {variants.map(variant => (
                                             <SelectItem key={variant.id} value={variant.id}>
-                                                Variant {variant.id.split('-').pop()?.toUpperCase()}
+                                                {getVariantDisplayName(variant)}
                                             </SelectItem>
                                         ))}
                                         <SelectItem value="add-new" className="text-blue-600">
@@ -434,7 +462,7 @@ export default function TemplateEditor() {
                             <div className="space-y-4 pt-4">
                                 <div className="flex justify-between items-center">
                                     <h3 className="font-semibold">
-                                        Variant {selectedVariant.id.split('-').pop()?.toUpperCase()}
+                                        {getVariantDisplayName(selectedVariant)}
                                     </h3>
                                     <div className="flex items-center gap-4">
                                         {lastSaved && (
