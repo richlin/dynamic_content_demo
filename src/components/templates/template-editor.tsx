@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { X } from "lucide-react";
+import { supabase } from '@/lib/supabase';
 
 interface Variant {
     id: string;
@@ -15,6 +16,7 @@ interface Variant {
     callToAction: string;
     emailBody: string;
     imageUrl: string;
+    variation_key?: string;
 }
 
 interface Segment {
@@ -169,6 +171,12 @@ Terms and conditions apply.`,
 
 const VARIANT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
+const getVariantDisplayName = (variant: Variant) => {
+    // Use the variation_key directly if it exists, otherwise fallback to id
+    const variationKey = variant.variation_key?.toUpperCase() || variant.id.split('-').pop()?.toUpperCase() || 'A';
+    return `Variant ${variationKey}`;
+};
+
 export default function TemplateEditor() {
     const [segments, setSegments] = React.useState<Segment[]>(INITIAL_SEGMENTS);
     const [selectedSegment, setSelectedSegment] = React.useState<string>(INITIAL_SEGMENTS[0].id);
@@ -221,7 +229,10 @@ export default function TemplateEditor() {
             return;
         }
         
-        const newVariant = createVariant(`${selectedSegment}-${VARIANT_LETTERS[nextLetterIndex].toLowerCase()}`);
+        const variationKey = VARIANT_LETTERS[nextLetterIndex].toLowerCase();
+        const newVariant = createVariant(`${selectedSegment}-${variationKey}`, {
+            variation_key: variationKey
+        });
         const newVariants = [...variants, newVariant];
         setVariants(newVariants);
         setSelectedVariant(newVariant);
@@ -235,23 +246,42 @@ export default function TemplateEditor() {
         saveToLocalStorage(updatedSegments);
     };
 
-    const removeVariant = (variantId: string) => {
+    const removeVariant = async (variantId: string) => {
         if (variants.length <= 1) {
             return; // Prevent removing the last variant
         }
-        const newVariants = variants.filter(v => v.id !== variantId);
-        setVariants(newVariants);
-        if (selectedVariant.id === variantId) {
-            setSelectedVariant(newVariants[0]);
+
+        try {
+            // If it's a UUID (existing variant), delete from database
+            if (variantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
+                const { error: deleteError } = await supabase
+                    .from('segment_variant_rules')
+                    .delete()
+                    .eq('id', variantId);
+
+                if (deleteError) {
+                    throw new Error(`Error deleting variant: ${deleteError.message}`);
+                }
+            }
+
+            // Update local state
+            const newVariants = variants.filter(v => v.id !== variantId);
+            setVariants(newVariants);
+            if (selectedVariant.id === variantId) {
+                setSelectedVariant(newVariants[0]);
+            }
+            
+            // Update the segment's variants
+            const updatedSegments = segments.map(segment =>
+                segment.id === selectedSegment
+                    ? { ...segment, variants: newVariants }
+                    : segment
+            );
+            setSegments(updatedSegments);
+        } catch (error) {
+            console.error('Error removing variant:', error);
+            alert(`Failed to remove variant: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-        
-        // Update the segment's variants
-        const updatedSegments = segments.map(segment =>
-            segment.id === selectedSegment
-                ? { ...segment, variants: newVariants }
-                : segment
-        );
-        saveToLocalStorage(updatedSegments);
     };
 
     const updateVariant = (variantId: string, field: keyof Variant, value: string) => {
@@ -272,18 +302,108 @@ export default function TemplateEditor() {
         saveToLocalStorage(updatedSegments);
     };
 
-    const handleSave = () => {
-        // Save to localStorage
-        const updatedSegments = segments.map(segment =>
-            segment.id === selectedSegment
-                ? { ...segment, variants }
-                : segment
-        );
-        saveToLocalStorage(updatedSegments);
-        setLastSaved(new Date());
-        
-        console.log('Template saved:', { selectedSegment, variants });
+    const handleSave = async () => {
+        try {
+            // For each variant in the current segment, save to segment_variant_rules
+            for (const variant of variants) {
+                const variantRuleData = {
+                    segment: selectedSegment,
+                    variation_key: variant.id.split('-').pop() || 'a',
+                    headline: variant.subjectLine,
+                    image_url: variant.imageUrl,
+                    call_to_action: variant.callToAction,
+                    subject_line: variant.subjectLine,
+                    email_body: variant.emailBody
+                };
+
+                // Check if this is a newly added variant (ID won't be a UUID)
+                const isNewVariant = !variant.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+                if (isNewVariant) {
+                    // Insert new variant rule
+                    const { data: insertedRule, error: insertError } = await supabase
+                        .from('segment_variant_rules')
+                        .insert([variantRuleData])
+                        .select()
+                        .single();
+
+                    if (insertError) {
+                        throw new Error(`Error inserting new variant: ${insertError.message}`);
+                    }
+
+                    // Update the variant's ID with the new UUID from Supabase
+                    if (insertedRule) {
+                        variant.id = insertedRule.id;
+                    }
+                } else {
+                    // Update existing variant rule
+                    const { error: updateError } = await supabase
+                        .from('segment_variant_rules')
+                        .update(variantRuleData)
+                        .eq('id', variant.id);
+
+                    if (updateError) {
+                        throw new Error(`Error updating variant: ${updateError.message}`);
+                    }
+                }
+            }
+
+            setLastSaved(new Date());
+            alert('Variant rules saved successfully!');
+
+            // Reload the data to get the updated variants with their new IDs
+            await loadData();
+        } catch (error) {
+            console.error('Error saving template:', error);
+            alert(`Failed to save template: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     };
+
+    // Update the useEffect to load data from Supabase
+    const loadData = async () => {
+        if (!selectedSegment) return;
+
+        try {
+            // Load variant rules
+            const { data: rulesData, error: rulesError } = await supabase
+                .from('segment_variant_rules')
+                .select('*')
+                .eq('segment', selectedSegment);
+
+            if (rulesError) throw rulesError;
+
+            if (rulesData && rulesData.length > 0) {
+                // Convert rules data to variants format
+                const loadedVariants = rulesData.map(rule => ({
+                    id: rule.id,
+                    subjectLine: rule.subject_line,
+                    callToAction: rule.call_to_action,
+                    emailBody: rule.email_body,
+                    imageUrl: rule.image_url,
+                    variation_key: rule.variation_key
+                }));
+
+                setVariants(loadedVariants);
+                setSelectedVariant(loadedVariants[0]);
+            } else {
+                // If no data exists, use initial variants
+                const initialSegment = INITIAL_SEGMENTS.find(s => s.id === selectedSegment);
+                if (initialSegment) {
+                    setVariants(initialSegment.variants);
+                    setSelectedVariant(initialSegment.variants[0]);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading data:', error);
+        }
+    };
+
+    // Use the loadData function in useEffect
+    React.useEffect(() => {
+        if (selectedSegment) {
+            loadData();
+        }
+    }, [selectedSegment]);
 
     if (!mounted) {
         return null;
@@ -331,7 +451,7 @@ export default function TemplateEditor() {
                                     <SelectContent>
                                         {variants.map(variant => (
                                             <SelectItem key={variant.id} value={variant.id}>
-                                                Variant {variant.id.split('-').pop()?.toUpperCase()}
+                                                {getVariantDisplayName(variant)}
                                             </SelectItem>
                                         ))}
                                         <SelectItem value="add-new" className="text-blue-600">
@@ -344,7 +464,7 @@ export default function TemplateEditor() {
                             <div className="space-y-4 pt-4">
                                 <div className="flex justify-between items-center">
                                     <h3 className="font-semibold">
-                                        Variant {selectedVariant.id.split('-').pop()?.toUpperCase()}
+                                        {getVariantDisplayName(selectedVariant)}
                                     </h3>
                                     <div className="flex items-center gap-4">
                                         {lastSaved && (

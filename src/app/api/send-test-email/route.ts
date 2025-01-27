@@ -1,32 +1,28 @@
-import { Resend } from 'resend';
 import { NextResponse } from 'next/server';
+import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: Request) {
     try {
-        const { recipient, variant, campaignName } = await request.json();
-        
-        const { firstName, email } = recipient;
-        const { subject, emailBody } = variant;
+        const { recipient, variant } = await request.json();
 
-        const response = await resend.emails.send({
-            from: 'Marketing Campaign <onboarding@resend.dev>',
-            to: email,
-            subject: subject,
-            html: `
-                <div>
-                    <p>Dear ${firstName},</p>
-                    ${emailBody}
-                </div>
-            `
+        // Replace placeholders in the email body
+        const personalizedBody = variant.email_body
+            .replace(/{{firstName}}/g, recipient.first_name)
+            .replace(/{{headline}}/g, variant.headline);
+
+        // Send the email
+        const data = await resend.emails.send({
+            from: 'AmEx <onboarding@resend.dev>',
+            to: recipient.email,
+            subject: variant.subject_line,
+            html: personalizedBody,
         });
 
-        return NextResponse.json({ success: true, messageId: response.id });
+        return NextResponse.json(data);
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to send email' },
-            { status: 500 }
-        );
+        console.error('Error sending email:', error);
+        return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
     }
 } 
