@@ -9,19 +9,19 @@ async function cleanupExistingData() {
     const { error: sendsError } = await supabase
         .from('email_sends')
         .delete()
-        .gte('id', '00000000-0000-0000-0000-000000000000');
+        .neq('id', '');
     if (sendsError) throw sendsError;
 
     const { error: rulesError } = await supabase
         .from('segment_variant_rules')
         .delete()
-        .gte('id', '00000000-0000-0000-0000-000000000000');
+        .neq('id', '');
     if (rulesError) throw rulesError;
 
     const { error: recipientsError } = await supabase
         .from('recipients')
         .delete()
-        .gte('id', '00000000-0000-0000-0000-000000000000');
+        .neq('id', '');
     if (recipientsError) throw recipientsError;
 
     console.log('✅ Existing data cleaned up');
@@ -72,8 +72,11 @@ async function populateInitialData() {
                     id: uuidv4(),
                     segment: 'HighSpender',
                     variation_key: 'A',
+                    headline: 'Exclusive Business Platinum Rewards',
+                    image_url: 'https://card.americanexpress.com/imgs/opt/cards/pentagon/amx/cns/right/amx-cns-platinum-right@480w.webp',
+                    call_to_action: 'Upgrade Now',
                     subject_line: 'Exclusive Business Platinum Rewards Await You',
-                    html_body: `Dear {{firstName}},
+                    email_body: `Dear {{firstName}},
 
 As one of our most distinguished Business Cardmembers, you've earned access to our exclusive Business Platinum rewards program.
 
@@ -88,17 +91,17 @@ Enjoy premium benefits including:
 
 Start maximizing your rewards today.
 
-Terms and conditions apply.`,
-                    headline: 'Exclusive Business Platinum Rewards',
-                    image_url: 'https://card.americanexpress.com/imgs/opt/cards/pentagon/amx/cns/right/amx-cns-platinum-right@480w.webp',
-                    call_to_action: 'Upgrade Now'
+Terms and conditions apply.`
                 },
                 {
                     id: uuidv4(),
                     segment: 'HighSpender',
                     variation_key: 'B',
+                    headline: 'Double Points on Business Purchases',
+                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-rewards.png',
+                    call_to_action: 'Start Earning',
                     subject_line: 'Double Your Business Rewards Today',
-                    html_body: `Dear {{firstName}},
+                    email_body: `Dear {{firstName}},
 
 Your business deserves more rewards. We're excited to offer you an enhanced rewards program tailored for high-value cardmembers.
 
@@ -113,17 +116,17 @@ Unlock these premium benefits:
 
 Start earning more today.
 
-Terms and conditions apply.`,
-                    headline: 'Double Points on Business Purchases',
-                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-rewards.png',
-                    call_to_action: 'Start Earning'
+Terms and conditions apply.`
                 },
                 {
                     id: uuidv4(),
                     segment: 'BusinessTraveler',
                     variation_key: 'A',
+                    headline: 'Enhanced Travel Benefits',
+                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-travel.png',
+                    call_to_action: 'Book Now',
                     subject_line: 'Maximize Your Business Travel Benefits',
-                    html_body: `Dear {{firstName}},
+                    email_body: `Dear {{firstName}},
 
 Make every business trip count with our enhanced travel program.
 
@@ -138,17 +141,17 @@ Exclusive benefits include:
 
 Book your next business trip today.
 
-Terms and conditions apply.`,
-                    headline: 'Enhanced Travel Benefits',
-                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-travel.png',
-                    call_to_action: 'Book Now'
+Terms and conditions apply.`
                 },
                 {
                     id: uuidv4(),
                     segment: 'BusinessTraveler',
                     variation_key: 'B',
+                    headline: 'New Business Expense Management Tools',
+                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/expense-management.png',
+                    call_to_action: 'Get Started',
                     subject_line: 'New Travel Management Tools for Your Business',
-                    html_body: `Dear {{firstName}},
+                    email_body: `Dear {{firstName}},
 
 Streamline your business travel with our new suite of management tools.
 
@@ -163,17 +166,17 @@ Discover these powerful features:
 
 Optimize your business travel today.
 
-Terms and conditions apply.`,
-                    headline: 'New Business Expense Management Tools',
-                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/expense-management.png',
-                    call_to_action: 'Get Started'
+Terms and conditions apply.`
                 },
                 {
                     id: uuidv4(),
                     segment: 'BudgetConscious',
                     variation_key: 'A',
+                    headline: 'Business Cash Back Program',
+                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-cashback.png',
+                    call_to_action: 'Start Saving',
                     subject_line: 'Smart Savings with Business Cash Back',
-                    html_body: `Dear {{firstName}},
+                    email_body: `Dear {{firstName}},
 
 Make your business spending work harder with our enhanced cash back program.
 
@@ -188,17 +191,17 @@ Great benefits include:
 
 Start earning cash back today.
 
-Terms and conditions apply.`,
-                    headline: 'Business Cash Back Program',
-                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-cashback.png',
-                    call_to_action: 'Start Saving'
+Terms and conditions apply.`
                 },
                 {
                     id: uuidv4(),
                     segment: 'BudgetConscious',
                     variation_key: 'B',
+                    headline: 'Special Business Financing Offer',
+                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-financing.png',
+                    call_to_action: 'Apply Now',
                     subject_line: 'Special Financing Offer for Your Business',
-                    html_body: `Dear {{firstName}},
+                    email_body: `Dear {{firstName}},
 
 Take advantage of our special business financing options designed for smart growth.
 
@@ -213,10 +216,7 @@ Exclusive offer includes:
 
 Grow your business today.
 
-Terms and conditions apply.`,
-                    headline: 'Special Business Financing Offer',
-                    image_url: 'https://image.member.americanexpress.com/lib/fe2b11717d640479721c73/m/1/business-financing.png',
-                    call_to_action: 'Apply Now'
+Terms and conditions apply.`
                 }
             ])
             .select();

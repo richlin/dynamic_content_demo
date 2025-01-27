@@ -8,7 +8,7 @@ export async function POST(request: Request) {
         const { recipient, variant } = await request.json();
 
         // Replace placeholders in the email body
-        const personalizedBody = variant.html_body
+        const personalizedBody = variant.email_body
             .replace(/{{firstName}}/g, recipient.first_name)
             .replace(/{{headline}}/g, variant.headline);
 

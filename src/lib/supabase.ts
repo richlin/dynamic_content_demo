@@ -21,11 +21,11 @@ export interface SegmentVariantRule {
     id: string;
     segment: string;
     variation_key: string;
-    subject_line: string;
-    html_body: string;
     headline: string;
     image_url: string;
     call_to_action: string;
+    subject_line: string;
+    email_body: string;
 }
 
 export interface EmailSend {

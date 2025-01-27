@@ -275,127 +275,101 @@ export default function TemplateEditor() {
 
     const handleSave = async () => {
         try {
-            // For each variant in the current segment, save a template
+            // For each variant in the current segment, save to segment_variant_rules
             for (const variant of variants) {
-                const templateData = {
-                    template_id: variant.id,
-                    subject_line: variant.subjectLine,
-                    html_body: variant.emailBody,
-                    segment: selectedSegment,
-                    variation_key: variant.id.split('-').pop() || 'a'  // Extract 'a' or 'b' from the variant ID
-                };
-
-                // Check if template exists
-                const { data: existingTemplate } = await supabase
-                    .from('email_templates')
-                    .select()
-                    .eq('template_id', variant.id)
-                    .single();
-
-                if (existingTemplate) {
-                    // Update existing template
-                    const { error: updateError } = await supabase
-                        .from('email_templates')
-                        .update(templateData)
-                        .eq('template_id', variant.id);
-
-                    if (updateError) throw updateError;
-                } else {
-                    // Insert new template
-                    const { error: insertError } = await supabase
-                        .from('email_templates')
-                        .insert([templateData]);
-
-                    if (insertError) throw insertError;
-                }
-
-                // Save variant rules
                 const variantRuleData = {
                     segment: selectedSegment,
                     variation_key: variant.id.split('-').pop() || 'a',
                     headline: variant.subjectLine,
                     image_url: variant.imageUrl,
-                    call_to_action: variant.callToAction
+                    call_to_action: variant.callToAction,
+                    subject_line: variant.subjectLine,
+                    email_body: variant.emailBody
                 };
 
-                // Check if variant rule exists
-                const { data: existingRule } = await supabase
-                    .from('segment_variant_rules')
-                    .select()
-                    .eq('segment', selectedSegment)
-                    .eq('variation_key', variant.id.split('-').pop() || 'a')
-                    .single();
+                // Check if this is a newly added variant (ID won't be a UUID)
+                const isNewVariant = !variant.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
-                if (existingRule) {
-                    // Update existing rule
+                if (isNewVariant) {
+                    // Insert new variant rule
+                    const { data: insertedRule, error: insertError } = await supabase
+                        .from('segment_variant_rules')
+                        .insert([variantRuleData])
+                        .select()
+                        .single();
+
+                    if (insertError) {
+                        throw new Error(`Error inserting new variant: ${insertError.message}`);
+                    }
+
+                    // Update the variant's ID with the new UUID from Supabase
+                    if (insertedRule) {
+                        variant.id = insertedRule.id;
+                    }
+                } else {
+                    // Update existing variant rule
                     const { error: updateError } = await supabase
                         .from('segment_variant_rules')
                         .update(variantRuleData)
-                        .eq('segment', selectedSegment)
-                        .eq('variation_key', variant.id.split('-').pop() || 'a');
+                        .eq('id', variant.id);
 
-                    if (updateError) throw updateError;
-                } else {
-                    // Insert new rule
-                    const { error: insertError } = await supabase
-                        .from('segment_variant_rules')
-                        .insert([variantRuleData]);
-
-                    if (insertError) throw insertError;
+                    if (updateError) {
+                        throw new Error(`Error updating variant: ${updateError.message}`);
+                    }
                 }
             }
 
             setLastSaved(new Date());
-            alert('Templates and variant rules saved successfully!');
+            alert('Variant rules saved successfully!');
+
+            // Reload the data to get the updated variants with their new IDs
+            await loadData();
         } catch (error) {
             console.error('Error saving template:', error);
-            alert('Failed to save template. Please check the console for details.');
+            alert(`Failed to save template: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     };
 
-    // Update the useEffect to load data from Supabase instead of localStorage
-    React.useEffect(() => {
-        async function loadData() {
-            try {
-                // Load templates
-                const { data: templatesData, error: templatesError } = await supabase
-                    .from('email_templates')
-                    .select('*')
-                    .eq('segment', selectedSegment);
+    // Update the useEffect to load data from Supabase
+    const loadData = async () => {
+        if (!selectedSegment) return;
 
-                if (templatesError) throw templatesError;
+        try {
+            // Load variant rules
+            const { data: rulesData, error: rulesError } = await supabase
+                .from('segment_variant_rules')
+                .select('*')
+                .eq('segment', selectedSegment);
 
-                // Load variant rules
-                const { data: rulesData, error: rulesError } = await supabase
-                    .from('segment_variant_rules')
-                    .select('*')
-                    .eq('segment', selectedSegment);
+            if (rulesError) throw rulesError;
 
-                if (rulesError) throw rulesError;
+            if (rulesData && rulesData.length > 0) {
+                // Convert rules data to variants format
+                const loadedVariants = rulesData.map(rule => ({
+                    id: rule.id,
+                    subjectLine: rule.subject_line,
+                    callToAction: rule.call_to_action,
+                    emailBody: rule.email_body,
+                    imageUrl: rule.image_url
+                }));
 
-                if (templatesData && rulesData) {
-                    // Combine template and rule data
-                    const combinedVariants = templatesData.map(template => {
-                        const rule = rulesData.find(r => r.variation_key === template.variation_key);
-                        return {
-                            id: template.template_id,
-                            subjectLine: template.subject_line,
-                            emailBody: template.html_body,
-                            callToAction: rule?.call_to_action || '',
-                            imageUrl: rule?.image_url || ''
-                        };
-                    });
-
-                    if (combinedVariants.length > 0) {
-                        setVariants(combinedVariants);
-                        setSelectedVariant(combinedVariants[0]);
-                    }
+                setVariants(loadedVariants);
+                setSelectedVariant(loadedVariants[0]);
+            } else {
+                // If no data exists, use initial variants
+                const initialSegment = INITIAL_SEGMENTS.find(s => s.id === selectedSegment);
+                if (initialSegment) {
+                    setVariants(initialSegment.variants);
+                    setSelectedVariant(initialSegment.variants[0]);
                 }
-            } catch (error) {
-                console.error('Error loading data:', error);
             }
+        } catch (error) {
+            console.error('Error loading data:', error);
         }
+    };
 
+    // Use the loadData function in useEffect
+    React.useEffect(() => {
         if (selectedSegment) {
             loadData();
         }

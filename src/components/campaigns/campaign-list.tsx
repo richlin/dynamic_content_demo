@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import React from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import type { Recipient, SegmentVariantRule } from '@/lib/supabase';
 
 interface Campaign {
     id: string;
@@ -41,23 +42,6 @@ interface SelectedSegment {
     id: string;
     segmentId: string;
     variants: string[];
-}
-
-// Add this interface for recipients
-interface Recipient {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    segments: string[];
-}
-
-// Add this interface for variants
-interface Variant {
-    id: string;
-    name: string;
-    subject: string;
-    emailBody: string;
 }
 
 export default function CampaignList() {
