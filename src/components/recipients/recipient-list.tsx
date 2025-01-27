@@ -60,17 +60,37 @@ export default function RecipientList() {
 
     const handleRemoveRecipient = async (id: string) => {
         try {
-            const { error } = await supabase
+            // First check if recipient has any email sends
+            const { data: emailSends, error: checksError } = await supabase
+                .from('email_sends')
+                .select('id')
+                .eq('recipient_id', id)
+                .limit(1);
+
+            if (checksError) {
+                throw new Error(`Error checking email sends: ${checksError.message}`);
+            }
+
+            if (emailSends && emailSends.length > 0) {
+                alert('Cannot remove recipient as they have associated email sends.');
+                return;
+            }
+
+            // If no email sends, proceed with deletion
+            const { error: deleteError } = await supabase
                 .from('recipients')
                 .delete()
                 .eq('id', id);
 
-            if (error) throw error;
+            if (deleteError) {
+                throw new Error(`Error deleting recipient: ${deleteError.message}`);
+            }
 
             setRecipients(recipients.filter(r => r.id !== id));
+            alert('Recipient removed successfully');
         } catch (error) {
             console.error('Error removing recipient:', error);
-            alert('Failed to remove recipient. Please try again.');
+            alert(`Failed to remove recipient: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     };
 
