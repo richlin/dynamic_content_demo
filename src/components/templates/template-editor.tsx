@@ -16,6 +16,7 @@ interface Variant {
     callToAction: string;
     emailBody: string;
     imageUrl: string;
+    variation_key?: string;
 }
 
 interface Segment {
@@ -171,12 +172,9 @@ Terms and conditions apply.`,
 const VARIANT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 const getVariantDisplayName = (variant: Variant) => {
-    // If it's a UUID, extract the variation_key from the database format
-    if (variant.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
-        return `Variant ${variant.id.split('-').pop()?.toUpperCase()}`;
-    }
-    // For new variants, use the simple format
-    return `Variant ${variant.id.split('-').pop()?.toUpperCase()}`;
+    // Use the variation_key directly if it exists, otherwise fallback to id
+    const variationKey = variant.variation_key?.toUpperCase() || variant.id.split('-').pop()?.toUpperCase() || 'A';
+    return `Variant ${variationKey}`;
 };
 
 export default function TemplateEditor() {
@@ -231,7 +229,10 @@ export default function TemplateEditor() {
             return;
         }
         
-        const newVariant = createVariant(`${selectedSegment}-${VARIANT_LETTERS[nextLetterIndex].toLowerCase()}`);
+        const variationKey = VARIANT_LETTERS[nextLetterIndex].toLowerCase();
+        const newVariant = createVariant(`${selectedSegment}-${variationKey}`, {
+            variation_key: variationKey
+        });
         const newVariants = [...variants, newVariant];
         setVariants(newVariants);
         setSelectedVariant(newVariant);
@@ -378,7 +379,8 @@ export default function TemplateEditor() {
                     subjectLine: rule.subject_line,
                     callToAction: rule.call_to_action,
                     emailBody: rule.email_body,
-                    imageUrl: rule.image_url
+                    imageUrl: rule.image_url,
+                    variation_key: rule.variation_key
                 }));
 
                 setVariants(loadedVariants);
