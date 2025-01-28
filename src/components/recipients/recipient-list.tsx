@@ -41,16 +41,14 @@ export default function RecipientList() {
             if (recipientsError) throw recipientsError;
             setRecipients(recipientsData || []);
 
-            // Get unique segments
+            // Load segments from segments table
             const { data: segmentData, error: segmentError } = await supabase
-                .from('recipients')
-                .select('segment')
-                .not('segment', 'is', null);
+                .from('segments')
+                .select('*')
+                .order('name');
 
             if (segmentError) throw segmentError;
-
-            const uniqueSegments = Array.from(new Set(segmentData?.map(r => r.segment) || []));
-            setSegments(uniqueSegments);
+            setSegments(segmentData.map(s => s.name) || []);
 
         } catch (error) {
             console.error('Error loading data:', error);

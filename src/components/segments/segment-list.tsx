@@ -5,13 +5,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Plus, Users } from "lucide-react";
-import { supabase } from '@/lib/supabase';
-
-interface Segment {
-    id: string;
-    name: string;
-}
+import { X, Plus } from "lucide-react";
+import { supabase, type Segment } from '@/lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Recipient {
     id: string;
@@ -21,56 +17,28 @@ interface Recipient {
     segments: string[];
 }
 
-const INITIAL_SEGMENTS: Segment[] = [
-    { id: 'high-spender', name: 'High Spender' },
-    { id: 'business-traveler', name: 'Business Traveler' },
-    { id: 'budget-conscious', name: 'Budget Conscious' }
-];
-
-const generateId = (name: string) => {
-    return name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-};
-
 export default function SegmentList() {
     const [segments, setSegments] = React.useState<Segment[]>([]);
-    const [newSegmentName, setNewSegmentName] = React.useState('');
-    const [recipientCounts, setRecipientCounts] = React.useState<Record<string, number>>({});
+    const [showNewSegmentForm, setShowNewSegmentForm] = React.useState(false);
+    const [newSegment, setNewSegment] = React.useState({
+        name: '',
+        description: ''
+    });
 
-    // Load segments and recipient counts on mount
+    // Load segments on mount
     React.useEffect(() => {
-        loadSegmentsAndCounts();
+        loadSegments();
     }, []);
 
-    const loadSegmentsAndCounts = async () => {
+    const loadSegments = async () => {
         try {
-            // Get unique segments from recipients table
-            const { data: segmentData, error: segmentError } = await supabase
-                .from('recipients')
-                .select('segment')
-                .not('segment', 'is', null);
+            const { data, error } = await supabase
+                .from('segments')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-            if (segmentError) throw segmentError;
-
-            // Convert to unique segments
-            const uniqueSegments = Array.from(new Set(segmentData?.map(r => r.segment) || []));
-            const formattedSegments = uniqueSegments.map(name => ({
-                id: name,
-                name: name
-            }));
-
-            setSegments(formattedSegments);
-
-            // Get recipient counts for each segment
-            const counts: Record<string, number> = {};
-            for (const segment of uniqueSegments) {
-                const { count } = await supabase
-                    .from('recipients')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('segment', segment);
-                
-                counts[segment] = count || 0;
-            }
-            setRecipientCounts(counts);
+            if (error) throw error;
+            setSegments(data || []);
         } catch (error) {
             console.error('Error loading segments:', error);
             alert('Failed to load segments. Please try again.');
@@ -78,77 +46,96 @@ export default function SegmentList() {
     };
 
     const handleAddSegment = async () => {
-        if (!newSegmentName.trim()) {
+        if (!newSegment.name.trim()) {
             alert('Please enter a segment name');
             return;
         }
 
-        const segmentId = newSegmentName.trim();
-        if (segments.some(s => s.id === segmentId)) {
-            alert('A segment with this name already exists');
-            return;
-        }
-
         try {
-            // We don't actually insert into a segments table
-            // Instead, the segment becomes valid when it's used in a recipient
-            setSegments([...segments, { id: segmentId, name: segmentId }]);
-            setNewSegmentName('');
+            // Check if segment name already exists
+            const { data: existingSegment, error: checkError } = await supabase
+                .from('segments')
+                .select('id')
+                .eq('name', newSegment.name.trim())
+                .single();
+
+            if (checkError && checkError.code !== 'PGRST116') { // PGRST116 means no rows returned
+                throw checkError;
+            }
+
+            if (existingSegment) {
+                alert('A segment with this name already exists. Please choose a different name.');
+                return;
+            }
+
+            // Create the new segment
+            const newSegmentData: Omit<Segment, 'created_at'> & { created_at: string } = {
+                id: uuidv4(),
+                name: newSegment.name.trim(),
+                description: newSegment.description.trim() || '',
+                created_at: new Date().toISOString()
+            };
+
+            const { error: insertError } = await supabase
+                .from('segments')
+                .insert([newSegmentData]);
+
+            if (insertError) {
+                console.error('Supabase insert error:', insertError);
+                throw new Error(`Failed to insert segment: ${insertError.message}`);
+            }
+
+            // Fetch the newly created segment to ensure we have the correct data
+            const { data: newlyCreatedSegment, error: fetchError } = await supabase
+                .from('segments')
+                .select('*')
+                .eq('id', newSegmentData.id)
+                .single();
+
+            if (fetchError) {
+                throw new Error(`Failed to fetch new segment: ${fetchError.message}`);
+            }
+
+            setSegments([newlyCreatedSegment, ...segments]);
+            setShowNewSegmentForm(false);
+            setNewSegment({ name: '', description: '' });
         } catch (error) {
             console.error('Error adding segment:', error);
-            alert('Failed to add segment. Please try again.');
+            alert(error instanceof Error ? `Failed to add segment: ${error.message}` : 'Failed to add segment. Please try again.');
         }
     };
 
     const handleRemoveSegment = async (segmentId: string) => {
-        // Check if segment is in use
-        const { count } = await supabase
-            .from('recipients')
-            .select('*', { count: 'exact', head: true })
-            .eq('segment', segmentId);
-
-        if (count && count > 0) {
-            alert(`Cannot remove segment. It is currently assigned to ${count} recipient(s).`);
+        if (!window.confirm('Are you sure you want to remove this segment?')) {
             return;
         }
 
-        setSegments(segments.filter(s => s.id !== segmentId));
+        try {
+            const { error } = await supabase
+                .from('segments')
+                .delete()
+                .eq('id', segmentId);
+
+            if (error) throw error;
+
+            setSegments(segments.filter(segment => segment.id !== segmentId));
+        } catch (error) {
+            console.error('Error removing segment:', error);
+            alert('Failed to remove segment. Please try again.');
+        }
     };
 
     return (
         <div className="space-y-6">
-            {/* Add New Segment */}
-            <Card>
-                <CardContent className="pt-6">
-                    <div className="space-y-4">
-                        <h2 className="text-xl font-semibold">Add New Segment</h2>
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <Label>Segment Name</Label>
-                                <Input
-                                    value={newSegmentName}
-                                    onChange={(e) => setNewSegmentName(e.target.value)}
-                                    placeholder="Enter segment name..."
-                                />
-                            </div>
-                            <div className="flex items-end">
-                                <Button onClick={handleAddSegment}>
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Add Segment
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Segments List */}
             <Card>
                 <CardContent className="pt-6">
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
                             <h2 className="text-xl font-semibold">Segments</h2>
-                            <span className="text-sm text-gray-500">Total: {segments.length}</span>
+                            <Button onClick={() => setShowNewSegmentForm(true)}>
+                                <Plus className="w-4 h-4 mr-2" />
+                                New Segment
+                            </Button>
                         </div>
                         <div className="space-y-2">
                             {segments.map((segment) => (
@@ -158,9 +145,11 @@ export default function SegmentList() {
                                 >
                                     <div>
                                         <span className="font-medium">{segment.name}</span>
-                                        <span className="ml-2 text-sm text-gray-500">
-                                            ({recipientCounts[segment.id] || 0} recipients)
-                                        </span>
+                                        {segment.description && (
+                                            <span className="ml-2 text-sm text-gray-500">
+                                                {segment.description}
+                                            </span>
+                                        )}
                                     </div>
                                     <Button
                                         variant="ghost"
@@ -173,13 +162,50 @@ export default function SegmentList() {
                             ))}
                             {segments.length === 0 && (
                                 <div className="text-center text-gray-500 py-4">
-                                    No segments added yet
+                                    No segments created yet
                                 </div>
                             )}
                         </div>
                     </div>
                 </CardContent>
             </Card>
+
+            {/* New Segment Form */}
+            {showNewSegmentForm && (
+                <Card>
+                    <CardContent className="pt-6">
+                        <div className="space-y-4">
+                            <h2 className="text-xl font-semibold">Create New Segment</h2>
+                            <div className="space-y-4">
+                                <div>
+                                    <Label>Segment Name</Label>
+                                    <Input
+                                        value={newSegment.name}
+                                        onChange={(e) => setNewSegment({ ...newSegment, name: e.target.value })}
+                                        placeholder="Enter segment name..."
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Description (Optional)</Label>
+                                    <Input
+                                        value={newSegment.description}
+                                        onChange={(e) => setNewSegment({ ...newSegment, description: e.target.value })}
+                                        placeholder="Enter segment description..."
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setShowNewSegmentForm(false)}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleAddSegment}>
+                                    Create Segment
+                                </Button>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 } 

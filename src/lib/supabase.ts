@@ -45,4 +45,11 @@ export interface Campaign {
     assignment_method: 'random' | 'sequential' | 'weighted';
     status: 'draft' | 'active' | 'paused' | 'completed';
     created_at?: string;
+}
+
+export interface Segment {
+    id: string;
+    name: string;
+    description: string | null;
+    created_at: string;
 } 

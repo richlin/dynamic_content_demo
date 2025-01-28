@@ -171,46 +171,113 @@ Terms and conditions apply.`,
 
 const VARIANT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
-const getVariantDisplayName = (variant: Variant) => {
+const getVariantDisplayName = (variant: Variant | null | undefined) => {
+    if (!variant) return 'Variant A';
+    
     // Use the variation_key directly if it exists, otherwise fallback to id
     const variationKey = variant.variation_key?.toUpperCase() || variant.id.split('-').pop()?.toUpperCase() || 'A';
     return `Variant ${variationKey}`;
 };
 
 export default function TemplateEditor() {
-    const [segments, setSegments] = React.useState<Segment[]>(INITIAL_SEGMENTS);
-    const [selectedSegment, setSelectedSegment] = React.useState<string>(INITIAL_SEGMENTS[0].id);
-    const [variants, setVariants] = React.useState<Variant[]>(INITIAL_SEGMENTS[0].variants);
-    const [selectedVariant, setSelectedVariant] = React.useState<Variant>(INITIAL_SEGMENTS[0].variants[0]);
+    const [segments, setSegments] = React.useState<Segment[]>([]);
+    const [selectedSegment, setSelectedSegment] = React.useState<string>('');
+    const [variants, setVariants] = React.useState<Variant[]>([]);
+    const [selectedVariant, setSelectedVariant] = React.useState<Variant | null>(null);
     const [lastSaved, setLastSaved] = React.useState<Date | null>(null);
     const [mounted, setMounted] = React.useState(false);
 
+    // Create an empty variant to use as default values
+    const emptyVariant: Variant = {
+        id: '',
+        subjectLine: '',
+        callToAction: '',
+        emailBody: '',
+        imageUrl: '',
+        variation_key: ''
+    };
+
+    // Helper function to get the current variant or empty variant
+    const getCurrentVariant = () => {
+        return selectedVariant || variants[0] || emptyVariant;
+    };
+
+    // Load segments on mount
     React.useEffect(() => {
-        setMounted(true);
-        // Try to load saved segments from localStorage
-        if (typeof window !== 'undefined') {
+        const loadSegments = async () => {
             try {
-                const savedSegments = localStorage.getItem('savedSegments');
-                if (savedSegments) {
-                    const parsed = JSON.parse(savedSegments);
-                    setSegments(parsed);
-                    setSelectedSegment(parsed[0].id);
-                    setVariants(parsed[0].variants);
-                    setSelectedVariant(parsed[0].variants[0]);
+                const { data: segmentData, error: segmentError } = await supabase
+                    .from('segments')
+                    .select('*')
+                    .order('name');
+
+                if (segmentError) throw segmentError;
+                
+                if (segmentData && segmentData.length > 0) {
+                    const formattedSegments = segmentData.map(s => ({
+                        id: s.id,
+                        name: s.name,
+                        variants: []
+                    }));
+                    setSegments(formattedSegments);
+                    setSelectedSegment(formattedSegments[0].id);
                 }
             } catch (error) {
-                console.error('Error loading segments from localStorage:', error);
+                console.error('Error loading segments:', error);
             }
-        }
+        };
+
+        setMounted(true);
+        loadSegments();
     }, []);
 
+    // Load variant rules when segment changes
     React.useEffect(() => {
-        const segment = segments.find(s => s.id === selectedSegment);
-        if (segment) {
-            setVariants(segment.variants);
-            setSelectedVariant(segment.variants[0]);
+        if (selectedSegment) {
+            loadData();
         }
-    }, [selectedSegment, segments]);
+    }, [selectedSegment]);
+
+    const loadData = async () => {
+        if (!selectedSegment) return;
+
+        try {
+            const selectedSegmentData = segments.find(s => s.id === selectedSegment);
+            if (!selectedSegmentData) return;
+
+            // Load variant rules for this segment
+            const { data: rulesData, error: rulesError } = await supabase
+                .from('segment_variant_rules')
+                .select('*')
+                .eq('segment', selectedSegmentData.name); // Use segment name for the query
+
+            if (rulesError) throw rulesError;
+
+            if (rulesData && rulesData.length > 0) {
+                // Convert rules data to variants format
+                const loadedVariants = rulesData.map(rule => ({
+                    id: rule.id,
+                    subjectLine: rule.subject_line,
+                    callToAction: rule.call_to_action,
+                    emailBody: rule.email_body,
+                    imageUrl: rule.image_url,
+                    variation_key: rule.variation_key
+                }));
+
+                setVariants(loadedVariants);
+                setSelectedVariant(loadedVariants[0]);
+            } else {
+                // Initialize with empty variant if none exist
+                const newVariant = createVariant(`${selectedSegment}-a`, {
+                    variation_key: 'a'
+                });
+                setVariants([newVariant]);
+                setSelectedVariant(newVariant);
+            }
+        } catch (error) {
+            console.error('Error loading data:', error);
+        }
+    };
 
     const saveToLocalStorage = (updatedSegments: Segment[]) => {
         if (typeof window !== 'undefined') {
@@ -267,7 +334,7 @@ export default function TemplateEditor() {
             // Update local state
             const newVariants = variants.filter(v => v.id !== variantId);
             setVariants(newVariants);
-            if (selectedVariant.id === variantId) {
+            if (selectedVariant?.id === variantId) {
                 setSelectedVariant(newVariants[0]);
             }
             
@@ -289,7 +356,7 @@ export default function TemplateEditor() {
             v.id === variantId ? { ...v, [field]: value } : v
         );
         setVariants(newVariants);
-        if (selectedVariant.id === variantId) {
+        if (selectedVariant?.id === variantId) {
             setSelectedVariant({ ...selectedVariant, [field]: value });
         }
         
@@ -304,11 +371,16 @@ export default function TemplateEditor() {
 
     const handleSave = async () => {
         try {
+            const selectedSegmentData = segments.find(s => s.id === selectedSegment);
+            if (!selectedSegmentData) {
+                throw new Error('Selected segment not found');
+            }
+
             // For each variant in the current segment, save to segment_variant_rules
             for (const variant of variants) {
                 const variantRuleData = {
-                    segment: selectedSegment,
-                    variation_key: variant.id.split('-').pop() || 'a',
+                    segment: selectedSegmentData.name, // Use segment name instead of ID
+                    variation_key: variant.variation_key || variant.id.split('-').pop() || 'a',
                     headline: variant.subjectLine,
                     image_url: variant.imageUrl,
                     call_to_action: variant.callToAction,
@@ -359,52 +431,6 @@ export default function TemplateEditor() {
         }
     };
 
-    // Update the useEffect to load data from Supabase
-    const loadData = async () => {
-        if (!selectedSegment) return;
-
-        try {
-            // Load variant rules
-            const { data: rulesData, error: rulesError } = await supabase
-                .from('segment_variant_rules')
-                .select('*')
-                .eq('segment', selectedSegment);
-
-            if (rulesError) throw rulesError;
-
-            if (rulesData && rulesData.length > 0) {
-                // Convert rules data to variants format
-                const loadedVariants = rulesData.map(rule => ({
-                    id: rule.id,
-                    subjectLine: rule.subject_line,
-                    callToAction: rule.call_to_action,
-                    emailBody: rule.email_body,
-                    imageUrl: rule.image_url,
-                    variation_key: rule.variation_key
-                }));
-
-                setVariants(loadedVariants);
-                setSelectedVariant(loadedVariants[0]);
-            } else {
-                // If no data exists, use initial variants
-                const initialSegment = INITIAL_SEGMENTS.find(s => s.id === selectedSegment);
-                if (initialSegment) {
-                    setVariants(initialSegment.variants);
-                    setSelectedVariant(initialSegment.variants[0]);
-                }
-            }
-        } catch (error) {
-            console.error('Error loading data:', error);
-        }
-    };
-
-    // Use the loadData function in useEffect
-    React.useEffect(() => {
-        if (selectedSegment) {
-            loadData();
-        }
-    }, [selectedSegment]);
-
     if (!mounted) {
         return null;
     }
@@ -435,7 +461,7 @@ export default function TemplateEditor() {
                             <div className="space-y-2">
                                 <Label>Variant</Label>
                                 <Select 
-                                    value={selectedVariant.id} 
+                                    value={selectedVariant?.id} 
                                     onValueChange={(value) => {
                                         if (value === 'add-new') {
                                             addVariant();
@@ -464,7 +490,7 @@ export default function TemplateEditor() {
                             <div className="space-y-4 pt-4">
                                 <div className="flex justify-between items-center">
                                     <h3 className="font-semibold">
-                                        {getVariantDisplayName(selectedVariant)}
+                                        {getVariantDisplayName(selectedVariant || variants[0])}
                                     </h3>
                                     <div className="flex items-center gap-4">
                                         {lastSaved && (
@@ -475,7 +501,7 @@ export default function TemplateEditor() {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() => removeVariant(selectedVariant.id)}
+                                            onClick={() => removeVariant(selectedVariant?.id || variants[0].id)}
                                             disabled={variants.length <= 1}
                                             className="text-red-600 hover:text-red-700"
                                         >
@@ -488,9 +514,9 @@ export default function TemplateEditor() {
                                 <div className="space-y-2">
                                     <Label>Subject Line</Label>
                                     <Input
-                                        value={selectedVariant.subjectLine}
+                                        value={getCurrentVariant().subjectLine}
                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
-                                            updateVariant(selectedVariant.id, 'subjectLine', e.target.value)
+                                            updateVariant(getCurrentVariant().id, 'subjectLine', e.target.value)
                                         }
                                         placeholder="Enter subject line..."
                                     />
@@ -499,9 +525,9 @@ export default function TemplateEditor() {
                                 <div className="space-y-2">
                                     <Label>Call to Action</Label>
                                     <Input
-                                        value={selectedVariant.callToAction}
+                                        value={getCurrentVariant().callToAction}
                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
-                                            updateVariant(selectedVariant.id, 'callToAction', e.target.value)
+                                            updateVariant(getCurrentVariant().id, 'callToAction', e.target.value)
                                         }
                                         placeholder="Enter call to action text..."
                                     />
@@ -510,9 +536,9 @@ export default function TemplateEditor() {
                                 <div className="space-y-2">
                                     <Label>Image URL</Label>
                                     <Input
-                                        value={selectedVariant.imageUrl}
+                                        value={getCurrentVariant().imageUrl}
                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
-                                            updateVariant(selectedVariant.id, 'imageUrl', e.target.value)
+                                            updateVariant(getCurrentVariant().id, 'imageUrl', e.target.value)
                                         }
                                         placeholder="Enter image URL..."
                                     />
@@ -521,9 +547,9 @@ export default function TemplateEditor() {
                                 <div className="space-y-2">
                                     <Label>Email Body</Label>
                                     <Textarea
-                                        value={selectedVariant.emailBody}
+                                        value={getCurrentVariant().emailBody}
                                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => 
-                                            updateVariant(selectedVariant.id, 'emailBody', e.target.value)
+                                            updateVariant(getCurrentVariant().id, 'emailBody', e.target.value)
                                         }
                                         placeholder="Enter email body..."
                                         className="min-h-[200px]"
@@ -558,14 +584,14 @@ export default function TemplateEditor() {
 
                             {/* Subject Line */}
                             <h2 className="text-2xl font-semibold text-[#006FCF]">
-                                {selectedVariant.subjectLine || 'Subject Line'}
+                                {getCurrentVariant().subjectLine || 'Subject Line'}
                             </h2>
 
                             {/* Image */}
-                            {selectedVariant.imageUrl && (
+                            {getCurrentVariant().imageUrl && (
                                 <div className="flex justify-center">
                                     <img 
-                                        src={selectedVariant.imageUrl} 
+                                        src={getCurrentVariant().imageUrl} 
                                         alt="Email preview" 
                                         className="max-w-full h-auto rounded-lg shadow-md"
                                     />
@@ -574,14 +600,14 @@ export default function TemplateEditor() {
 
                             {/* Email Body */}
                             <div className="whitespace-pre-line text-gray-700 font-sans">
-                                {selectedVariant.emailBody || 'Email body will appear here...'}
+                                {getCurrentVariant().emailBody || 'Email body will appear here...'}
                             </div>
 
                             {/* CTA Button */}
-                            {selectedVariant.callToAction && (
+                            {getCurrentVariant().callToAction && (
                                 <div className="flex justify-center pt-4">
                                     <button className="bg-[#006FCF] text-white px-8 py-3 rounded font-semibold hover:bg-blue-700 transition-colors">
-                                        {selectedVariant.callToAction}
+                                        {getCurrentVariant().callToAction}
                                     </button>
                                 </div>
                             )}
